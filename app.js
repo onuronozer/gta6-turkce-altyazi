@@ -1,5 +1,5 @@
 /* global Tesseract */
-const APP_VERSION = '1.1.4';
+const APP_VERSION = '1.1.5';
 const $ = (selector) => document.querySelector(selector);
 const COMMON_ENGLISH = new Set([
   'a','i','am','an','and','are','as','at','be','but','by','can','come','did','do','down',
@@ -198,7 +198,7 @@ async function prepareOCR() {
   });
 }
 
-function scheduleScan(delay = state.verified ? 950 : 520) {
+function scheduleScan(delay = state.verified ? 300 : 60) {
   clearTimeout(state.timer);
   if (state.running) state.timer = setTimeout(scanFrame, delay);
 }
@@ -280,11 +280,18 @@ function acceptCandidate(text, confidence, variant) {
   state.candidate = text;
   state.candidateCount = matchingReads.length;
   const variantCount = new Set(matchingReads.map(read => read.variant)).size;
-  const requiredAgreement = variantCount > 1 ? 2 : variant === 'raw' ? 3 : 2;
+  const requiredAgreement = variantCount > 1 || confidence >= 70 ? 2 : variant === 'raw' ? 3 : 2;
   state.verified = state.candidateCount >= requiredAgreement;
 
-  // Tek kamera karesi hiçbir zaman gösterilmez. Arka plan şekillerini yazı sanan
-  // OCR sonuçlarının büyük çoğunluğu bir sonraki karede değişir.
+  // Only a strong multiword reading may bypass initial temporal confirmation.
+  const words = text.toLowerCase().match(/[a-z]+/g) || [];
+  const quickCandidate = confidence >= 88 && words.length >= 3 &&
+    words.filter(word => COMMON_ENGLISH.has(word)).length >= 2;
+  if (!state.verified && quickCandidate && text !== state.lastTranslated) {
+    state.lastTranslated = text;
+    verification('HIZLI SONUÇ • KONTROL EDİLİYOR', 'checking');
+    translate(text, false);
+  }
   if (state.candidateCount < requiredAgreement) {
     const progress = `${state.candidateCount}/${requiredAgreement}`;
     verification(`OKUNUYOR ${progress} • KONTROL EDİLİYOR`, 'checking');

@@ -1,7 +1,7 @@
-const CACHE = 'ekran-cevirmen-v1.1.4';
+const CACHE = 'ekran-cevirmen-v1.1.5';
 const SHELL = [
-  './', './index.html', './styles.css?v=1.1.4', './app.js?v=1.1.4',
-  './manifest.webmanifest?v=1.1.4', './icons/icon.svg'
+  './', './index.html', './styles.css?v=1.1.5', './app.js?v=1.1.5',
+  './manifest.webmanifest?v=1.1.5', './icons/icon.svg'
 ];
 
 self.addEventListener('install', event => {
