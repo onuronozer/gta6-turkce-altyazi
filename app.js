@@ -64,13 +64,22 @@ function plausibleEnglish(text, confidence) {
   const words = text.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) || [];
   const letters = words.join('');
   if (letters.length < 2 || words.length === 0) return false;
+  if (text.length > 150 || words.length > 24) return false;
+
+  // İngilizcede tek başına kullanılabilen tek harfli kelimeler yalnızca “a” ve “I”.
+  if (words.some(word => word.length === 1 && word !== 'a' && word !== 'i')) return false;
 
   const knownWords = words.filter(word => COMMON_ENGLISH.has(word)).length;
   const naturalLongWord = words.some(word => word.length >= 4 && /[aeiouy]/.test(word));
   const tooManyTinyUnknowns = words.length > 1 &&
     words.filter(word => word.length <= 2 && !COMMON_ENGLISH.has(word)).length / words.length >= .5;
+  const naturalWordRatio = words.filter(word =>
+    COMMON_ENGLISH.has(word) || word === 'i' || (word.length >= 3 && /[aeiouy]/.test(word))
+  ).length / words.length;
 
   if (tooManyTinyUnknowns && knownWords === 0) return false;
+  if (words.length >= 4 && naturalWordRatio < .62) return false;
+  if (words.length >= 7 && knownWords / words.length < .12) return false;
   if (knownWords > 0) return true;
   if (naturalLongWord && confidence >= 52) return true;
   return words.length === 1 && letters.length >= 3 && /[aeiouy]/.test(letters) && confidence >= 70;
@@ -195,26 +204,18 @@ function acceptCandidate(text, confidence) {
     state.verified = false;
   }
 
-  // İlk mantıklı okumayı hemen göster; kullanıcı çeviriyi beklemesin.
-  const fastEnough = confidence >= 65 || state.candidateCount >= 2;
-  if (fastEnough && (!state.lastTranslated || (!similar(text, state.lastTranslated) && state.candidateCount === 1))) {
-    state.lastTranslated = text;
-    ui.source.textContent = text;
-    verification('HIZLI ÇEVİRİ • KONTROL EDİLİYOR', 'checking');
-    translate(text, false);
-    return;
-  }
-
+  // Tek kamera karesi hiçbir zaman gösterilmez. Arka plan şekillerini yazı sanan
+  // OCR sonuçlarının büyük çoğunluğu bir sonraki karede değişir.
   if (state.candidateCount < 2) {
     verification('OKUNUYOR • KONTROL EDİLİYOR', 'checking');
     return;
   }
 
-  // Orta güvenli ilk okuma iki karede aynı çıkarsa hızlı çeviriyi başlat.
+  // İki benzer kareden sonra ilk çeviriyi başlat.
   if (!state.lastTranslated) {
     state.lastTranslated = text;
     ui.source.textContent = text;
-    verification('HIZLI ÇEVİRİ • KONTROL EDİLİYOR', 'checking');
+    verification('DOĞRULANDI • ÇEVRİLİYOR', 'verified');
     translate(text, false);
   }
 

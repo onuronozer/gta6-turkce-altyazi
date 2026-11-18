@@ -1,4 +1,4 @@
-const CACHE = 'ekran-cevirmen-v3';
+const CACHE = 'ekran-cevirmen-v4';
 const SHELL = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icons/icon.svg'];
 
 self.addEventListener('install', event => {
