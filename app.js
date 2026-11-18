@@ -1,5 +1,5 @@
 /* global Tesseract */
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 const $ = (selector) => document.querySelector(selector);
 const COMMON_ENGLISH = new Set([
   'a','i','am','an','and','are','as','at','be','but','by','can','come','did','do','down',
@@ -46,13 +46,27 @@ function normalizeText(text) {
 
 function similar(a, b) {
   if (!a || !b) return false;
-  const x = a.toLowerCase(), y = b.toLowerCase();
+  const x = a.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const y = b.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (x === y) return true;
-  const shorter = Math.min(x.length, y.length);
-  if (shorter / Math.max(x.length, y.length) < .78) return false;
-  let same = 0;
-  for (let i = 0; i < shorter; i++) if (x[i] === y[i]) same++;
-  return same / shorter > .86;
+  if (Math.min(x.length, y.length) < 4) return false;
+  if (Math.min(x.length, y.length) / Math.max(x.length, y.length) < .68) return false;
+
+  const pairs = new Map();
+  for (let i = 0; i < x.length - 1; i++) {
+    const pair = x.slice(i, i + 2);
+    pairs.set(pair, (pairs.get(pair) || 0) + 1);
+  }
+  let overlap = 0;
+  for (let i = 0; i < y.length - 1; i++) {
+    const pair = y.slice(i, i + 2);
+    const count = pairs.get(pair) || 0;
+    if (count > 0) {
+      overlap++;
+      pairs.set(pair, count - 1);
+    }
+  }
+  return (2 * overlap) / (x.length + y.length - 2) >= .72;
 }
 
 function verification(label, kind) {
@@ -117,8 +131,8 @@ function isolateSubtitlePixels(canvas, mode) {
     const luminance = red * .2126 + green * .7152 + blue * .0722;
 
     // Kamera kaynaklı renk sapmasına toleranslı beyaz ve sıcak sarı maskeleri.
-    const isWhite = luminance >= 158 && chroma <= 68;
-    const isYellow = red >= 155 && green >= 120 && blue <= 150 && red - blue >= 32;
+    const isWhite = luminance >= 122 && chroma <= 92;
+    const isYellow = red >= 135 && green >= 105 && blue <= 170 && red - blue >= 22;
     const keep = mode === 'white' ? isWhite : mode === 'yellow' ? isYellow : isWhite || isYellow;
 
     const value = keep ? 0 : 255;
@@ -131,7 +145,7 @@ function isolateSubtitlePixels(canvas, mode) {
 
   const density = selected / (canvas.width * canvas.height);
   // Çok az piksel: altyazı yok. Çok fazla piksel: parlak arka plan/yüzey.
-  if (density < .00045 || density > .13) return false;
+  if (density < .0002 || density > .18) return false;
   context.putImageData(image, 0, 0);
   return true;
 }
@@ -237,23 +251,21 @@ function acceptCandidate(text, confidence) {
   state.lastValidAt = now;
   state.recentReads = state.recentReads.filter(read => now - read.at < 5000);
   state.recentReads.push({ text, confidence, at: now });
-  state.recentReads = state.recentReads.slice(-3);
+  state.recentReads = state.recentReads.slice(-4);
 
-  if (similar(text, state.candidate)) state.candidateCount++;
-  else {
-    state.candidate = text;
-    state.candidateCount = 1;
-    state.verified = false;
-  }
+  const matchingReads = state.recentReads.filter(read => similar(read.text, text));
+  state.candidate = text;
+  state.candidateCount = matchingReads.length;
+  state.verified = state.candidateCount >= 2;
 
   // Tek kamera karesi hiçbir zaman gösterilmez. Arka plan şekillerini yazı sanan
   // OCR sonuçlarının büyük çoğunluğu bir sonraki karede değişir.
-  if (state.candidateCount < 3) {
+  if (state.candidateCount < 2) {
     verification('OKUNUYOR • KONTROL EDİLİYOR', 'checking');
     return;
   }
 
-  // Üç benzer kareden sonra ilk çeviriyi başlat.
+  // Son dört okumadan en az iki benzer sonuçtan sonra çeviriyi başlat.
   if (!state.lastTranslated) {
     state.lastTranslated = text;
     ui.source.textContent = text;
@@ -262,7 +274,7 @@ function acceptCandidate(text, confidence) {
   }
 
   // Benzer okumalardan en güvenli ve en tam olanı seç.
-  const group = state.recentReads.filter(read => similar(read.text, text));
+  const group = matchingReads;
   const best = group.sort((a, b) => {
     const scoreA = a.confidence + Math.min(a.text.length, 100) * .18;
     const scoreB = b.confidence + Math.min(b.text.length, 100) * .18;
