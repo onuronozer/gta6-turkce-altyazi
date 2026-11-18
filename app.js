@@ -1,5 +1,5 @@
 /* global Tesseract */
-const APP_VERSION = '1.1.2';
+const APP_VERSION = '1.1.3';
 const $ = (selector) => document.querySelector(selector);
 const COMMON_ENGLISH = new Set([
   'a','i','am','an','and','are','as','at','be','but','by','can','come','did','do','down',
@@ -211,8 +211,14 @@ async function scanFrame() {
     const vw = ui.video.videoWidth, vh = ui.video.videoHeight;
     const top = Number(ui.roiTop.value) / 100;
     const height = Math.min(Number(ui.roiHeight.value) / 100, 1 - top);
-    const sx = Math.round(vw * .05), sy = Math.round(vh * top);
-    const sw = Math.round(vw * .90), sh = Math.round(vh * height);
+    // Map the visible object-fit:cover preview back to camera pixels.
+    const bounds = ui.video.getBoundingClientRect();
+    const fit = Math.max(bounds.width / vw, bounds.height / vh);
+    const visibleWidth = bounds.width / fit;
+    const visibleHeight = bounds.height / fit;
+    const sx = (vw - visibleWidth) / 2 + visibleWidth * .05;
+    const sy = (vh - visibleHeight) / 2 + visibleHeight * top;
+    const sw = visibleWidth * .90, sh = visibleHeight * height;
 
     const scale = Math.min(2, 1500 / sw);
     const canvas = ui.canvas;
