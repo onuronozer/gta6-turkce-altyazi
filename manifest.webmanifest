@@ -1,0 +1,14 @@
+{
+  "name": "Ekran Çevirmen",
+  "short_name": "Çevirmen",
+  "description": "TV'deki İngilizce oyun altyazılarını kamerayla okuyup Türkçeye çevirir.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#050806",
+  "theme_color": "#050806",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
