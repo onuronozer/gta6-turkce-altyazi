@@ -1,5 +1,5 @@
 /* global Tesseract */
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.1.2';
 const $ = (selector) => document.querySelector(selector);
 const COMMON_ENGLISH = new Set([
   'a','i','am','an','and','are','as','at','be','but','by','can','come','did','do','down',
@@ -28,7 +28,7 @@ const state = {
   voice: true, candidate: '', candidateCount: 0, lastTranslated: '',
   timer: null, translations: new Map(), wakeLock: null, recentReads: [],
   translationSeq: 0, verified: false, lastShownTranslation: '', emptyReads: 0,
-  lastValidAt: 0
+  lastValidAt: 0, maskFailures: 0
 };
 
 function setStatus(text, kind = 'ready') {
@@ -219,12 +219,16 @@ async function scanFrame() {
     canvas.width = Math.round(sw * scale);
     canvas.height = Math.round(sh * scale);
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.filter = ui.subtitleColor.value === 'raw'
+    const selectedMode = ui.subtitleColor.value;
+    const useRawFallback = selectedMode === 'auto' && state.maskFailures >= 2;
+    const ocrVariant = selectedMode === 'raw' || useRawFallback ? 'raw' : 'masked';
+    ctx.filter = ocrVariant === 'raw'
       ? 'grayscale(1) contrast(1.65) brightness(1.08)'
       : 'none';
     ctx.drawImage(ui.video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
 
-    if (!isolateSubtitlePixels(canvas, ui.subtitleColor.value)) {
+    if (ocrVariant === 'masked' && !isolateSubtitlePixels(canvas, selectedMode)) {
+      state.maskFailures++;
       noSubtitleFound();
       return;
     }
@@ -233,8 +237,12 @@ async function scanFrame() {
     const text = normalizeText(result.data.text || '');
     const confidence = Number(result.data.confidence) || 0;
     if (text.length >= 2 && /[A-Za-z]/.test(text) && plausibleEnglish(text, confidence)) {
-      acceptCandidate(text, confidence);
+      if (ocrVariant === 'masked') state.maskFailures = 0;
+      acceptCandidate(text, confidence, ocrVariant);
+      if (useRawFallback && state.verified) state.maskFailures = 0;
     } else {
+      if (ocrVariant === 'masked') state.maskFailures++;
+      else if (useRawFallback) state.maskFailures = 0;
       noSubtitleFound();
     }
   } catch (error) {
@@ -245,23 +253,26 @@ async function scanFrame() {
   }
 }
 
-function acceptCandidate(text, confidence) {
+function acceptCandidate(text, confidence, variant) {
   const now = Date.now();
   state.emptyReads = 0;
   state.lastValidAt = now;
   state.recentReads = state.recentReads.filter(read => now - read.at < 5000);
-  state.recentReads.push({ text, confidence, at: now });
+  state.recentReads.push({ text, confidence, variant, at: now });
   state.recentReads = state.recentReads.slice(-4);
 
   const matchingReads = state.recentReads.filter(read => similar(read.text, text));
   state.candidate = text;
   state.candidateCount = matchingReads.length;
-  state.verified = state.candidateCount >= 2;
+  const variantCount = new Set(matchingReads.map(read => read.variant)).size;
+  const requiredAgreement = variantCount > 1 ? 2 : variant === 'raw' ? 3 : 2;
+  state.verified = state.candidateCount >= requiredAgreement;
 
   // Tek kamera karesi hiçbir zaman gösterilmez. Arka plan şekillerini yazı sanan
   // OCR sonuçlarının büyük çoğunluğu bir sonraki karede değişir.
-  if (state.candidateCount < 2) {
-    verification('OKUNUYOR • KONTROL EDİLİYOR', 'checking');
+  if (state.candidateCount < requiredAgreement) {
+    const progress = `${state.candidateCount}/${requiredAgreement}`;
+    verification(`OKUNUYOR ${progress} • KONTROL EDİLİYOR`, 'checking');
     return;
   }
 
