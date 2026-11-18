@@ -1,5 +1,5 @@
 /* global Tesseract */
-const APP_VERSION = '1.1.3';
+const APP_VERSION = '1.1.4';
 const $ = (selector) => document.querySelector(selector);
 const COMMON_ENGLISH = new Set([
   'a','i','am','an','and','are','as','at','be','but','by','can','come','did','do','down',
@@ -192,7 +192,7 @@ async function prepareOCR() {
     }
   });
   await state.worker.setParameters({
-    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
+    tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
     preserve_interword_spaces: '1',
     user_defined_dpi: '220'
   });
@@ -235,24 +235,33 @@ async function scanFrame() {
 
     if (ocrVariant === 'masked' && !isolateSubtitlePixels(canvas, selectedMode)) {
       state.maskFailures++;
+      setStatus('Renk filtresi yazıyı ayıramadı; alternatif okuma deneniyor', 'loading');
       noSubtitleFound();
       return;
     }
 
-    const result = await state.worker.recognize(canvas);
-    const text = normalizeText(result.data.text || '');
-    const confidence = Number(result.data.confidence) || 0;
+    setStatus('Görüntü okunuyor…', 'loading');
+    const result = await state.worker.recognize(canvas, {}, { text: true, blocks: true });
+    const lines = (result.data.blocks || []).flatMap(block =>
+      (block.paragraphs || []).flatMap(paragraph => paragraph.lines || [])
+    );
+    const accepted = lines.filter(line => plausibleEnglish(normalizeText(line.text || ''), Number(line.confidence) || 0));
+    const text = accepted.map(line => normalizeText(line.text)).join(' ');
+    const confidence = accepted.length
+      ? accepted.reduce((sum, line) => sum + Number(line.confidence), 0) / accepted.length : 0;
+    ui.source.textContent = result.data.text || 'Yazı algılanmadı';
     if (text.length >= 2 && /[A-Za-z]/.test(text) && plausibleEnglish(text, confidence)) {
       if (ocrVariant === 'masked') state.maskFailures = 0;
       acceptCandidate(text, confidence, ocrVariant);
       if (useRawFallback && state.verified) state.maskFailures = 0;
     } else {
+      setStatus(`Okuma güveni düşük (%${Math.round(Number(result.data.confidence) || 0)}); altyazıya yaklaş`, 'loading');
       if (ocrVariant === 'masked') state.maskFailures++;
       else if (useRawFallback) state.maskFailures = 0;
       noSubtitleFound();
     }
   } catch (error) {
-    setStatus('OCR tekrar deneniyor…', 'loading');
+    setStatus(`Okuma hatası: ${error.message || 'Bilinmeyen hata'}`, 'error');
   } finally {
     state.busy = false;
     scheduleScan();
