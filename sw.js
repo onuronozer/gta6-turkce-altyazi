@@ -1,5 +1,8 @@
-const CACHE = 'ekran-cevirmen-v4';
-const SHELL = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icons/icon.svg'];
+const CACHE = 'ekran-cevirmen-v1.0.5';
+const SHELL = [
+  './', './index.html', './styles.css?v=1.0.5', './app.js?v=1.0.5',
+  './manifest.webmanifest?v=1.0.5', './icons/icon.svg'
+];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));

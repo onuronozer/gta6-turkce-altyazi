@@ -49,6 +49,10 @@ button { color: inherit; }
 .brand-mark b { font-size: 25px; letter-spacing: -.1em; font-style: italic; }
 .brand-mark span { margin-left: 4px; color: var(--green); font-size: 12px; }
 .eyebrow { color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: .16em; margin: 18px 0 8px; }
+.welcome-version {
+  margin-top: 14px; padding: 4px 9px; border: 1px solid rgba(103,232,249,.35);
+  border-radius: 999px; color: var(--green); font-size: 9px; font-weight: 900; letter-spacing: .14em;
+}
 h1 { font-size: clamp(38px, 8vw, 68px); line-height: .95; letter-spacing: -.05em; margin: 0; }
 h1 span {
   color: transparent;
@@ -108,6 +112,10 @@ video { width: 100%; height: 100%; object-fit: cover; background: #000; }
 }
 .status-wrap { min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .status-wrap span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.version-label {
+  flex: 0 0 auto; padding: 3px 7px; border: 1px solid rgba(103,232,249,.38);
+  border-radius: 999px; color: var(--green); font-size: 9px; font-weight: 900; letter-spacing: .06em;
+}
 .status-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: var(--green); box-shadow: 0 0 11px var(--green); }
 .status-dot.loading { background: var(--yellow); box-shadow: 0 0 11px var(--yellow); animation: pulse 1s infinite alternate; }
 .status-dot.error { background: #ff6464; box-shadow: 0 0 11px #ff6464; }

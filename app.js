@@ -1,4 +1,5 @@
 /* global Tesseract */
+const APP_VERSION = '1.0.5';
 const $ = (selector) => document.querySelector(selector);
 const COMMON_ENGLISH = new Set([
   'a','i','am','an','and','are','as','at','be','but','by','can','come','did','do','down',
@@ -337,4 +338,8 @@ window.addEventListener('pagehide', () => {
 });
 
 updateROI();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register(`./sw.js?v=${APP_VERSION}`, { updateViaCache: 'none' })
+    .then(registration => registration.update())
+    .catch(() => {});
+}
