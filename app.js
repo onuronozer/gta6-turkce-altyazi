@@ -1,5 +1,14 @@
 /* global Tesseract */
 const $ = (selector) => document.querySelector(selector);
+const COMMON_ENGLISH = new Set([
+  'a','i','am','an','and','are','as','at','be','but','by','can','come','did','do','down',
+  'for','from','get','go','good','got','had','has','have','he','help','her','here','hey',
+  'him','his','how','if','in','is','it','just','know','let','like','look','me','move','my',
+  'no','not','now','of','oh','ok','okay','on','one','or','our','out','please','right',
+  'run','say','see','she','so','some','stay','stop','take','that','the','them','there',
+  'they','this','time','to','up','us','wait','want','was','we','well','what','when',
+  'where','who','why','will','with','you','your','yes','yo'
+]);
 
 const ui = {
   welcome: $('#welcome'), scanner: $('#scanner'), start: $('#startButton'),
@@ -17,7 +26,8 @@ const state = {
   worker: null, stream: null, running: false, busy: false, paused: false,
   voice: true, candidate: '', candidateCount: 0, lastTranslated: '',
   timer: null, translations: new Map(), wakeLock: null, recentReads: [],
-  translationSeq: 0, verified: false, lastShownTranslation: ''
+  translationSeq: 0, verified: false, lastShownTranslation: '', emptyReads: 0,
+  lastValidAt: 0
 };
 
 function setStatus(text, kind = 'ready') {
@@ -47,6 +57,39 @@ function similar(a, b) {
 function verification(label, kind) {
   ui.verifyBadge.textContent = label;
   ui.verifyBadge.className = `verify-badge ${kind}`;
+}
+
+function plausibleEnglish(text, confidence) {
+  if (confidence < 42) return false;
+  const words = text.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) || [];
+  const letters = words.join('');
+  if (letters.length < 2 || words.length === 0) return false;
+
+  const knownWords = words.filter(word => COMMON_ENGLISH.has(word)).length;
+  const naturalLongWord = words.some(word => word.length >= 4 && /[aeiouy]/.test(word));
+  const tooManyTinyUnknowns = words.length > 1 &&
+    words.filter(word => word.length <= 2 && !COMMON_ENGLISH.has(word)).length / words.length >= .5;
+
+  if (tooManyTinyUnknowns && knownWords === 0) return false;
+  if (knownWords > 0) return true;
+  if (naturalLongWord && confidence >= 52) return true;
+  return words.length === 1 && letters.length >= 3 && /[aeiouy]/.test(letters) && confidence >= 70;
+}
+
+function noSubtitleFound() {
+  state.emptyReads++;
+  if (!state.lastValidAt || Date.now() - state.lastValidAt < 2800 || state.emptyReads < 2) return;
+  state.translationSeq++;
+  state.candidate = '';
+  state.candidateCount = 0;
+  state.lastTranslated = '';
+  state.lastShownTranslation = '';
+  state.recentReads = [];
+  state.verified = false;
+  ui.translation.textContent = 'İngilizce altyazı bekleniyor…';
+  ui.source.textContent = '—';
+  verification('BEKLİYOR', 'waiting');
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 
 async function requestWakeLock() {
@@ -123,7 +166,12 @@ async function scanFrame() {
 
     const result = await state.worker.recognize(canvas);
     const text = normalizeText(result.data.text || '');
-    if (text.length >= 3 && /[A-Za-z]/.test(text)) acceptCandidate(text, Number(result.data.confidence) || 0);
+    const confidence = Number(result.data.confidence) || 0;
+    if (text.length >= 2 && /[A-Za-z]/.test(text) && plausibleEnglish(text, confidence)) {
+      acceptCandidate(text, confidence);
+    } else {
+      noSubtitleFound();
+    }
   } catch (error) {
     setStatus('OCR tekrar deneniyor…', 'loading');
   } finally {
@@ -134,6 +182,8 @@ async function scanFrame() {
 
 function acceptCandidate(text, confidence) {
   const now = Date.now();
+  state.emptyReads = 0;
+  state.lastValidAt = now;
   state.recentReads = state.recentReads.filter(read => now - read.at < 5000);
   state.recentReads.push({ text, confidence, at: now });
   state.recentReads = state.recentReads.slice(-3);
@@ -146,7 +196,8 @@ function acceptCandidate(text, confidence) {
   }
 
   // İlk mantıklı okumayı hemen göster; kullanıcı çeviriyi beklemesin.
-  if (!state.lastTranslated || (!similar(text, state.lastTranslated) && state.candidateCount === 1)) {
+  const fastEnough = confidence >= 65 || state.candidateCount >= 2;
+  if (fastEnough && (!state.lastTranslated || (!similar(text, state.lastTranslated) && state.candidateCount === 1))) {
     state.lastTranslated = text;
     ui.source.textContent = text;
     verification('HIZLI ÇEVİRİ • KONTROL EDİLİYOR', 'checking');
@@ -154,7 +205,18 @@ function acceptCandidate(text, confidence) {
     return;
   }
 
-  if (state.candidateCount < 2) return;
+  if (state.candidateCount < 2) {
+    verification('OKUNUYOR • KONTROL EDİLİYOR', 'checking');
+    return;
+  }
+
+  // Orta güvenli ilk okuma iki karede aynı çıkarsa hızlı çeviriyi başlat.
+  if (!state.lastTranslated) {
+    state.lastTranslated = text;
+    ui.source.textContent = text;
+    verification('HIZLI ÇEVİRİ • KONTROL EDİLİYOR', 'checking');
+    translate(text, false);
+  }
 
   // Benzer okumalardan en güvenli ve en tam olanı seç.
   const group = state.recentReads.filter(read => similar(read.text, text));
