@@ -1,5 +1,5 @@
 /* global Tesseract */
-const APP_VERSION = '1.1.5';
+const APP_VERSION = '1.1.6';
 const $ = (selector) => document.querySelector(selector);
 const COMMON_ENGLISH = new Set([
   'a','i','am','an','and','are','as','at','be','but','by','can','come','did','do','down',
@@ -28,7 +28,7 @@ const state = {
   voice: true, candidate: '', candidateCount: 0, lastTranslated: '',
   timer: null, translations: new Map(), wakeLock: null, recentReads: [],
   translationSeq: 0, verified: false, lastShownTranslation: '', emptyReads: 0,
-  lastValidAt: 0, maskFailures: 0
+  lastValidAt: 0, maskFailures: 0, preferredVariant: null, variantMisses: 0
 };
 
 function setStatus(text, kind = 'ready') {
@@ -198,7 +198,7 @@ async function prepareOCR() {
   });
 }
 
-function scheduleScan(delay = state.verified ? 300 : 60) {
+function scheduleScan(delay = 30) {
   clearTimeout(state.timer);
   if (state.running) state.timer = setTimeout(scanFrame, delay);
 }
@@ -220,13 +220,14 @@ async function scanFrame() {
     const sy = (vh - visibleHeight) / 2 + visibleHeight * top;
     const sw = visibleWidth * .90, sh = visibleHeight * height;
 
-    const scale = Math.min(2, 1500 / sw);
+    const scale = Math.min(1, 1500 / sw);
     const canvas = ui.canvas;
     canvas.width = Math.round(sw * scale);
     canvas.height = Math.round(sh * scale);
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const selectedMode = ui.subtitleColor.value;
-    const useRawFallback = selectedMode === 'auto' && state.maskFailures >= 2;
+    const useRawFallback = selectedMode === 'auto' &&
+      (state.preferredVariant === 'raw' || state.maskFailures >= 2);
     const ocrVariant = selectedMode === 'raw' || useRawFallback ? 'raw' : 'masked';
     ctx.filter = ocrVariant === 'raw'
       ? 'grayscale(1) contrast(1.65) brightness(1.08)'
@@ -251,13 +252,18 @@ async function scanFrame() {
       ? accepted.reduce((sum, line) => sum + Number(line.confidence), 0) / accepted.length : 0;
     ui.source.textContent = result.data.text || 'Yazı algılanmadı';
     if (text.length >= 2 && /[A-Za-z]/.test(text) && plausibleEnglish(text, confidence)) {
+      state.preferredVariant = ocrVariant;
+      state.variantMisses = 0;
       if (ocrVariant === 'masked') state.maskFailures = 0;
       acceptCandidate(text, confidence, ocrVariant);
-      if (useRawFallback && state.verified) state.maskFailures = 0;
     } else {
       setStatus(`Okuma güveni düşük (%${Math.round(Number(result.data.confidence) || 0)}); altyazıya yaklaş`, 'loading');
       if (ocrVariant === 'masked') state.maskFailures++;
-      else if (useRawFallback) state.maskFailures = 0;
+      else if (useRawFallback && ++state.variantMisses >= 5) {
+        state.maskFailures = 0;
+        state.preferredVariant = null;
+        state.variantMisses = 0;
+      }
       noSubtitleFound();
     }
   } catch (error) {
