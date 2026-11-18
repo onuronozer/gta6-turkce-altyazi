@@ -1,5 +1,5 @@
 /* global Tesseract */
-const APP_VERSION = '1.0.5';
+const APP_VERSION = '1.1.0';
 const $ = (selector) => document.querySelector(selector);
 const COMMON_ENGLISH = new Set([
   'a','i','am','an','and','are','as','at','be','but','by','can','come','did','do','down',
@@ -19,7 +19,7 @@ const ui = {
   pause: $('#pauseButton'), voice: $('#voiceButton'), errorPanel: $('#errorPanel'),
   errorText: $('#errorText'), retry: $('#retryButton'), settings: $('#settingsPanel'),
   settingsButton: $('#settingsButton'), closeSettings: $('#closeSettings'),
-  roiTop: $('#roiTop'), roiHeight: $('#roiHeight'), scanBox: $('#scanBox'),
+  roiTop: $('#roiTop'), roiHeight: $('#roiHeight'), subtitleColor: $('#subtitleColor'), scanBox: $('#scanBox'),
   shadeTop: $('.shade-top'), shadeBottom: $('.shade-bottom')
 };
 
@@ -102,6 +102,40 @@ function noSubtitleFound() {
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 
+function isolateSubtitlePixels(canvas, mode) {
+  if (mode === 'raw') return true;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  const pixels = image.data;
+  let selected = 0;
+
+  for (let i = 0; i < pixels.length; i += 4) {
+    const red = pixels[i], green = pixels[i + 1], blue = pixels[i + 2];
+    const brightest = Math.max(red, green, blue);
+    const darkest = Math.min(red, green, blue);
+    const chroma = brightest - darkest;
+    const luminance = red * .2126 + green * .7152 + blue * .0722;
+
+    // Kamera kaynaklı renk sapmasına toleranslı beyaz ve sıcak sarı maskeleri.
+    const isWhite = luminance >= 158 && chroma <= 68;
+    const isYellow = red >= 155 && green >= 120 && blue <= 150 && red - blue >= 32;
+    const keep = mode === 'white' ? isWhite : mode === 'yellow' ? isYellow : isWhite || isYellow;
+
+    const value = keep ? 0 : 255;
+    pixels[i] = value;
+    pixels[i + 1] = value;
+    pixels[i + 2] = value;
+    pixels[i + 3] = 255;
+    if (keep) selected++;
+  }
+
+  const density = selected / (canvas.width * canvas.height);
+  // Çok az piksel: altyazı yok. Çok fazla piksel: parlak arka plan/yüzey.
+  if (density < .00045 || density > .13) return false;
+  context.putImageData(image, 0, 0);
+  return true;
+}
+
 async function requestWakeLock() {
   try { state.wakeLock = await navigator.wakeLock?.request('screen'); } catch (_) { /* iOS may not support it */ }
 }
@@ -171,8 +205,15 @@ async function scanFrame() {
     canvas.width = Math.round(sw * scale);
     canvas.height = Math.round(sh * scale);
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.filter = 'grayscale(1) contrast(1.65) brightness(1.08)';
+    ctx.filter = ui.subtitleColor.value === 'raw'
+      ? 'grayscale(1) contrast(1.65) brightness(1.08)'
+      : 'none';
     ctx.drawImage(ui.video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+    if (!isolateSubtitlePixels(canvas, ui.subtitleColor.value)) {
+      noSubtitleFound();
+      return;
+    }
 
     const result = await state.worker.recognize(canvas);
     const text = normalizeText(result.data.text || '');
@@ -207,12 +248,12 @@ function acceptCandidate(text, confidence) {
 
   // Tek kamera karesi hiçbir zaman gösterilmez. Arka plan şekillerini yazı sanan
   // OCR sonuçlarının büyük çoğunluğu bir sonraki karede değişir.
-  if (state.candidateCount < 2) {
+  if (state.candidateCount < 3) {
     verification('OKUNUYOR • KONTROL EDİLİYOR', 'checking');
     return;
   }
 
-  // İki benzer kareden sonra ilk çeviriyi başlat.
+  // Üç benzer kareden sonra ilk çeviriyi başlat.
   if (!state.lastTranslated) {
     state.lastTranslated = text;
     ui.source.textContent = text;

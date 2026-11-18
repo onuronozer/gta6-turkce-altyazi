@@ -1,7 +1,7 @@
 {
   "name": "Ekran Çevirmen",
   "short_name": "Çevirmen",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "description": "TV'deki İngilizce oyun altyazılarını kamerayla okuyup Türkçeye çevirir.",
   "start_url": "./",
   "scope": "./",

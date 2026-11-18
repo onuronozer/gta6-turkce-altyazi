@@ -161,6 +161,10 @@ summary { cursor: pointer; }
 .panel-head button { width: 32px; height: 32px; border-radius: 10px; font-size: 22px; }
 .settings-panel label { display: grid; grid-template-columns: 100px 1fr; align-items: center; gap: 8px; margin-top: 13px; font-size: 12px; }
 .settings-panel input { width: 100%; accent-color: var(--yellow); }
+.settings-panel select {
+  width: 100%; min-height: 32px; padding: 4px 8px; border: 1px solid #ffffff30;
+  border-radius: 9px; background: #151916; color: var(--ink);
+}
 .settings-panel p { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.35; }
 
 .error-panel { min-height: 100%; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 26px; text-align: center; }
